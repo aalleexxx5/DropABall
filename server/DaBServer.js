@@ -2,6 +2,7 @@ const http = require("http");
 const url = require("url");
 const fs = require("fs");
 const path = require("path");
+const query = require('querystring');
 const EXTENSION_MAP = { // "Borrowed" from Stackoverflow
     '.ico': 'image/x-icon',
     '.html': 'text/html',
@@ -17,6 +18,8 @@ const EXTENSION_MAP = { // "Borrowed" from Stackoverflow
     '.doc': 'application/msword'
 };
 
+let clicks = [];
+
 let server = http.createServer( (request, response) => {
     console.log("Received request: ");
     console.log("URL: "+ request.url);
@@ -30,6 +33,7 @@ let server = http.createServer( (request, response) => {
 
 function recieveFileRequest(request, response){
     if (request.url == "/") {
+        console.log("Index request");
         fs.readFile("../site/index.html", (error, content)=>{
             if (error) {
                 sendEmptyResponse(response);
@@ -38,11 +42,13 @@ function recieveFileRequest(request, response){
                 response.end(content, "utf-8");
             }
         });
-    }else if (/.*\\..*/g.test(response.url)) {
+    }else if (/(.+)(\.)(.+)/g.test(request.url)) {
+        console.log("Generic file requet");
         let location = "../site" + request.url;
         let extension = path.extname(location);
         fs.readFile(location, (error, content) => {
             if (error) {
+                console.log(error);
                 sendEmptyResponse(response);
             } else {
                 response.writeHead(200, {"Content-Type": EXTENSION_MAP[extension]})
@@ -57,12 +63,22 @@ function recieveFileRequest(request, response){
 
 function recieveNonFileRequest(request, response) {
     console.log("Non file request:");
-    if (response.url == "/BallPoll") {
+    if (request.url.startsWith("/BallPoll")) {
         //TODO: Long poll for new balls. Will respond after a new ball is dropped, or 5 seconds passed by.
-    }else if (response.url == "/OnClick") {
-        //TODO: Drop a ball!
-    }else if (request.url == "/Balls") {
-        //TODO: Respond with all balls.
+    }else if (request.url == "/OnClick") {
+        let body = "";
+        request.on("data", chunk =>{
+            body += chunk;
+        });
+        request.on("end", ()=>{
+            console.log(body);
+            let data = query.parse(body);
+            let point = JSON.parse(data.location);
+            clicks.push(new Click(point));
+            console.table("Click received. Clicks:"+clicks);
+            console.log(clicks[0]);
+            response.end("ok");
+        });
     }
     sendEmptyResponse(response);
 }
@@ -72,4 +88,17 @@ function sendEmptyResponse(response){
     response.end();
 }
 
-console.log("Server started.")
+class Click{
+    constructor(location){
+        this.location = location;
+        this.clickTime = Date.now();
+    }
+}
+
+class Point {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+}
+console.log("Server started.");

@@ -15,7 +15,7 @@ function dropThisBall(ball){
     balls.push(ball);
 }
 
-function sendConnectRequest(){
+/*function sendConnectRequest(){
     var connectRequest = new XMLHttpRequest();
     connectRequest.onreadystatechange = () => {
         if (this.readyState == 4 && this.status == 200){
@@ -24,27 +24,31 @@ function sendConnectRequest(){
     };
     connectRequest.open("GET", "balls", true);
     connectRequest.send();
-}
+}*/
 
 function sendSyncRequest(ballNumberToSync, nextBottomHitTime){
-    //TODO MATTIAS! Se sendConnectRequest.
+    //TODO MATTIAS! Se sendClick og longPoll.
 }
 
 function sendClick(clickLocation){
     var connectRequest = new XMLHttpRequest();
     connectRequest.open("POST","OnClick", true);
-    connectRequest.send(JSON.stringify(location));
+
+    let jsonLocation = JSON.stringify(clickLocation);
+    console.log(jsonLocation);
+    connectRequest.send("location="+jsonLocation);
 }
 
 function longPollForClicks() {
     var connectRequest = new XMLHttpRequest();
     connectRequest.onreadystatechange = () => {
         if (this.readyState == 4 && this.status == 200){
-            dropThisBall(JSON.parse(this.responseText));
+            let response = JSON.parse(this.responseText);
+            dropABall(response.location, response.startTime, response.dropTime);
             setTimeout(longPollForClicks, 0);
         }
     };
-    connectRequest.open("GET", "BallPoll", true);
+    connectRequest.open("GET", "BallPoll?number="+balls.length, true);
     connectRequest.send();
 }
 
