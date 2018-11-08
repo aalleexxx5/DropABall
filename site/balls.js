@@ -117,7 +117,7 @@ function draw() {
         if (ball.createTime > timeSinceStart) continue;
 
         let t = ((timeSinceStart % (ball.dropTime * 2)) - ball.dropTime) / ball.dropTime;
-        let location = new Point(ball.topPoint.x, lerp(ball.topPoint.y, height, Math.abs(t)));
+        let location = new Point(ball.topPoint.x, lerp(height, ball.topPoint.y, Math.abs(t)));
 
         drawCircle(location.x, location.y, RADIUS);
     }
