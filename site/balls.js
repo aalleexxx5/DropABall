@@ -48,7 +48,7 @@ function longPollForClicks() {
             setTimeout(longPollForClicks, 0);
         }
     };
-    connectRequest.open("GET", "BallPoll?number="+balls.length, true);
+    connectRequest.open("GET", "BallPoll?size="+balls.length, true);
     connectRequest.send();
 }
 

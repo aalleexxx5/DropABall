@@ -77,10 +77,12 @@ function recieveNonFileRequest(request, response) {
             clicks.push(new Click(point));
             console.table("Click received. Clicks:"+clicks);
             console.log(clicks[0]);
+            response.writeHead(200, {"Content-Type":"text/txt"});
             response.end("ok");
         });
+    }else{
+        sendEmptyResponse(response);
     }
-    sendEmptyResponse(response);
 }
 
 function sendEmptyResponse(response){
