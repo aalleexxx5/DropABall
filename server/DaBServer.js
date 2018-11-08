@@ -3,6 +3,8 @@ const url = require("url");
 const fs = require("fs");
 const path = require("path");
 const query = require('querystring');
+const fallDuration = 500;
+const LOWEST_LATENCY = 100;
 const EXTENSION_MAP = { // "Borrowed" from Stackoverflow
     '.ico': 'image/x-icon',
     '.html': 'text/html',
@@ -19,6 +21,7 @@ const EXTENSION_MAP = { // "Borrowed" from Stackoverflow
 };
 
 let clicks = [];
+let waitingClients = [];
 
 let server = http.createServer( (request, response) => {
     console.log("Received request: ");
@@ -64,6 +67,19 @@ function recieveFileRequest(request, response){
 function recieveNonFileRequest(request, response) {
     console.log("Non file request:");
     if (request.url.startsWith("/BallPoll")) {
+        console.log("Ball poll recieved");
+        let parameters = url.parse(request.url, true).query;
+        if (parameters.size< clicks.length){
+            sendClick(response, parameters.size);
+        } else {
+            waitingClients.push(response);
+            response.setTimeout(5000, ()=>{
+                response.writeHead(204);
+                response.end();
+                let index = waitingClients.findIndex(e => e==response);
+                if (index !== -1) {waitingClients.splice(index, 1);}
+            });
+        }
         //TODO: Long poll for new balls. Will respond after a new ball is dropped, or 5 seconds passed by.
     }else if (request.url == "/OnClick") {
         let body = "";
@@ -74,7 +90,9 @@ function recieveNonFileRequest(request, response) {
             console.log(body);
             let data = query.parse(body);
             let point = JSON.parse(data.location);
+            let index = clicks.length;
             clicks.push(new Click(point));
+            clickUpdated(index);
             console.table("Click received. Clicks:"+clicks);
             console.log(clicks[0]);
             response.writeHead(200, {"Content-Type":"text/txt"});
@@ -83,6 +101,26 @@ function recieveNonFileRequest(request, response) {
     }else{
         sendEmptyResponse(response);
     }
+}
+
+function clickUpdated(index){
+    waitingClients.forEach(res => sendClick(res, index));
+    waitingClients = [];
+}
+
+function sendClick(response, clickIndex){
+    response.writeHead(200, {"Content-Type":"text/json"});
+    var data = {};
+    data.location = clicks[clickIndex].location;
+    data.index = clickIndex;
+    data.topTime = (Date.now() - (clicks[clickIndex].clickTime)) % (fallDuration*2);
+    if (data.topTime < LOWEST_LATENCY){
+        data.topTime += fallDuration*2;
+    }
+    data.dropTime = fallDuration;
+    let responseContent = JSON.stringify(data);
+    console.log("Sent click: "+ responseContent);
+    response.end(responseContent);
 }
 
 function sendEmptyResponse(response){
@@ -104,3 +142,4 @@ class Point {
     }
 }
 console.log("Server started.");
+clicks.push(new Click(new Point(100,100)));

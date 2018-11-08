@@ -8,10 +8,10 @@ function lerp(start, end, t) {
 }
 
 function dropABall(startPoint, startTime, dropTime) {
-    balls.push(new Ball(startPoint, startTime+(Date.now()-START_TIME), dropTime))
+    balls.push(new Ball(startPoint, startTime + (Date.now() - START_TIME), dropTime))
 }
 
-function dropThisBall(ball){
+function dropThisBall(ball) {
     balls.push(ball);
 }
 
@@ -26,30 +26,51 @@ function dropThisBall(ball){
     connectRequest.send();
 }*/
 
-function sendSyncRequest(ballNumberToSync, nextBottomHitTime){
+function sendSyncRequest(ballNumberToSync, nextBottomHitTime) {
     //TODO MATTIAS! Se sendClick og longPoll.
 }
 
-function sendClick(clickLocation){
+function sendClick(clickLocation) {
     var connectRequest = new XMLHttpRequest();
-    connectRequest.open("POST","OnClick", true);
+    connectRequest.open("POST", "OnClick", true);
 
     let jsonLocation = JSON.stringify(clickLocation);
     console.log(jsonLocation);
-    connectRequest.send("location="+jsonLocation);
+    connectRequest.send("location=" + jsonLocation);
 }
 
 function longPollForClicks() {
+    fetch("BallPoll?size=" + balls.length)
+        .then(res => {
+            if (res.status == 200) {
+                res.json().then(response => {
+                    console.log("Received click: ", response);
+                    console.log("index: " + response.index);
+                    console.log("Location: " + response.location);
+                    console.log("Top time: " + response.topTime);
+                    console.log("Drop time: ", response.dropTime);
+                    balls[response.index] = new Ball(response.location, response.topTime + (Date.now() - START_TIME), response.dropTime);
+                });
+            }
+            setTimeout(longPollForClicks, 0);
+        }).catch(rej => console.log("error: ", rej));
+
+    /*
     var connectRequest = new XMLHttpRequest();
     connectRequest.onreadystatechange = () => {
         if (this.readyState == 4 && this.status == 200){
             let response = JSON.parse(this.responseText);
-            dropABall(response.location, response.startTime, response.dropTime);
-            setTimeout(longPollForClicks, 0);
+            console.log("response: "+response);
+            if (balls.size <= response.index){
+                dropABall(response.location, response.topTime, response.dropTime);
+            }else{
+                balls[data.index] = new Ball(response.location, response.topTime, response.dropTime);
+            }
+            setTimeout(longPollForClicks(), 0);
         }
     };
     connectRequest.open("GET", "BallPoll?size="+balls.length, true);
-    connectRequest.send();
+    connectRequest.send();*/
 }
 
 class Ball {
@@ -84,7 +105,7 @@ function setup() {
     resize();
     window.addEventListener("resize", resize);
     window.requestAnimationFrame(draw);
-    dropABall(new Point(200, 100), 200, 1000);
+    longPollForClicks();
 }
 
 function draw() {
