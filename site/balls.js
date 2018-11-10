@@ -2,6 +2,7 @@ const RADIUS = 20;
 let balls = [];
 let ctx, canvas, width, height;
 let START_TIME = Date.now();
+let sessionID;
 
 function lerp(start, end, t) {
     return start * (1 - t) + end * t;
@@ -30,17 +31,35 @@ function sendSyncRequest(ballNumberToSync, nextBottomHitTime) {
     //TODO MATTIAS! Se sendClick og longPoll.
 }
 
+function sendSessionRequest(){
+    return fetch("NewSession")
+        .then(res => res.json())
+        .then(id => {
+            console.log("Recieved sessionID: ",id);
+            sessionID = id
+        });
+}
+
 function sendClick(clickLocation) {
+    if (!sessionID) {
+        sendSessionRequest();
+        return;
+    }
     var connectRequest = new XMLHttpRequest();
     connectRequest.open("POST", "OnClick", true);
-
+    connectRequest.onreadystatechange = function(){
+        if (this.status === 403) {
+            sendSessionRequest();
+            return;
+        }
+    };
     let jsonLocation = JSON.stringify(clickLocation);
     console.log(jsonLocation);
-    connectRequest.send("location=" + jsonLocation);
+    connectRequest.send("location=" + jsonLocation+"&id="+sessionID);
 }
 
 function longPollForClicks() {
-    fetch("BallPoll?size=" + balls.length)
+    fetch("BallPoll?size=" + balls.length + (sessionID? "&id="+sessionID:""))
         .then(res => {
             if (res.status == 200) {
                 res.json().then(response => {
@@ -51,6 +70,8 @@ function longPollForClicks() {
                     console.log("Drop time: ", response.dropTime);
                     balls[response.index] = new Ball(response.location, response.topTime + (Date.now() - START_TIME), response.dropTime);
                 });
+            }else if (res.status == 205){
+                balls = [];
             }
             setTimeout(longPollForClicks, 0);
         }).catch(rej => console.log("error: ", rej));
@@ -100,8 +121,9 @@ function draw() {
 
         if (ball.createTime > timeSinceStart) continue;
 
-        let t = (((timeSinceStart-ball.createTime) % (ball.dropTime * 2)) - ball.dropTime) / ball.dropTime;
-        let location = new Point(ball.topPoint.x, lerp(height, ball.topPoint.y, Math.abs(t)));
+        let t = Math.abs((((timeSinceStart-ball.createTime) % (ball.dropTime * 2)) - ball.dropTime) / ball.dropTime);
+        let adjustedT = t*(2-t);
+        let location = new Point(ball.topPoint.x, lerp(height, ball.topPoint.y, adjustedT));
 
         drawCircle(location.x, location.y, RADIUS);
     }

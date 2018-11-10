@@ -3,8 +3,12 @@ const url = require("url");
 const fs = require("fs");
 const path = require("path");
 const query = require('querystring');
+const crypto = require("crypto");
 const fallDuration = 500;
 const LOWEST_LATENCY = 100;
+const ID_LENGTH = 32;
+const MAX_BALLS_PR_SESSION = 2;
+const SESSION_EXP_TIME = 10000; // 10_000
 const EXTENSION_MAP = { // "Borrowed" from Stackoverflow
     '.ico': 'image/x-icon',
     '.html': 'text/html',
@@ -21,6 +25,7 @@ const EXTENSION_MAP = { // "Borrowed" from Stackoverflow
 };
 
 let clicks = [];
+let sessions = new Map();
 let waitingClients = [];
 
 let server = http.createServer( (request, response) => {
@@ -67,18 +72,24 @@ function recieveFileRequest(request, response){
 function receiveNonFileRequest(request, response) {
     console.log("Non file request:");
     if (request.url.startsWith("/BallPoll")) {
-        console.log("Ball poll recieved");
         let parameters = url.parse(request.url, true).query;
+        if (parameters.id){
+            reIssueSession(parameters.id);
+        }
         if (parameters.size< clicks.length){
             sendClick(response, parameters.size);
-        } else {
+        } else if (parameters.size == clicks.length) {
             waitingClients.push(response);
+            clearExpiredBalls();
             response.setTimeout(5000, ()=>{
                 response.writeHead(204);
                 response.end();
                 let index = waitingClients.findIndex(e => e==response);
                 if (index !== -1) {waitingClients.splice(index, 1);}
             });
+        }else{ // Clicks are missing, some may have been removed.
+            console.log("Array length mismatch.");
+            sendEmptyResponse(response, 205);
         }
     }else if (request.url == "/OnClick") {
         let body = "";
@@ -88,20 +99,40 @@ function receiveNonFileRequest(request, response) {
         request.on("end", ()=>{
             console.log(body);
             let data = query.parse(body);
+            let session = data.id;
+            if (session===undefined || !isValidSession(session)) {
+                console.log(isValidSession(session));
+                sendEmptyResponse(response, 403);
+                return;
+            }
+
             let point = JSON.parse(data.location);
-            let index = clicks.length;
-            clicks.push(new Click(point));
+            let index;
+            if (countClicksOfSession(session) < MAX_BALLS_PR_SESSION) {
+                index = clicks.length;
+                clicks.push(new Click(point, session));
+            }else{
+                clickToUpdate = findOldestClickFromSession(session);
+                console.log("Updating: ",clickToUpdate);
+                index = clicks.findIndex(e=> e==clickToUpdate);
+                clicks[index] = new Click(point, session);
+            }
             clickUpdated(index);
             console.log("Click received");
             response.writeHead(200, {"Content-Type":"text/txt"});
             response.end("ok");
         });
-    }else{
+    }else if (request.url == "/NewSession"){
+        response.writeHead(200,{"Content-Type":"text/json"});
+        let sessionID = generateSessionID();
+        console.log("Sent session id: "+sessionID);
+        response.end(JSON.stringify(sessionID));
+    } else{
         sendEmptyResponse(response);
     }
 }
 
-function clickUpdated(index){
+function clickUpdated(index){ // No way of removing clicks.
     waitingClients.forEach(res => sendClick(res, index));
     waitingClients = [];
 }
@@ -121,14 +152,75 @@ function sendClick(response, clickIndex){
     response.end(responseContent);
 }
 
-function sendEmptyResponse(response){
-    response.writeHead(404);
+function countClicksOfSession(session){
+    return clicks.filter(it => it.session === session).length
+}
+
+function findOldestClickFromSession(session){
+    let oldest = undefined;
+    clicks.filter(it => it.session === session).forEach(it=> {
+        if (!oldest || it.clickTime < oldest.clickTime) {
+            oldest = it;
+        }
+    });
+    return oldest;
+}
+
+function clearExpiredBalls(){
+    for (let i = 0; i < clicks.length; i++) {
+        const click = clicks[i];
+        if (!isValidSession(click.session)) {
+            console.log("Cleared expired ball");
+            clicks.splice(i, 1);
+            i--;
+        }
+    }
+}
+
+function generateSessionID() {
+    let found = false;
+    let id = "";
+    while (!found){
+        id = generateRandomIDString();
+        found = !(sessions.has(id))
+    }
+    sessions.set(id,Date.now() + SESSION_EXP_TIME);
+    return id;
+}
+
+function isValidSession(session) {
+    clearExpiredSessions();
+    return sessions.has(session);
+}
+
+function clearExpiredSessions(){
+    let toDelete = [];
+    sessions.forEach((value,key) => {
+        if (value < Date.now()) {
+            toDelete.push(key)
+        }
+    });
+    if (toDelete.length > 0) console.log("Removed expired sessions: ",toDelete);
+    toDelete.forEach(it=>sessions.delete(it));
+}
+
+function reIssueSession(session) {
+    sessions.set(session,Date.now() + SESSION_EXP_TIME);
+}
+
+function generateRandomIDString(){
+    return crypto.randomBytes(ID_LENGTH).toString("hex");
+}
+
+function sendEmptyResponse(response, status = 404){
+    response.writeHead(status);
     response.end();
 }
 
 class Click{
-    constructor(location){
+    constructor(location, session){
         this.location = location;
+        this.session = session;
         this.clickTime = Date.now();
     }
 }
@@ -140,4 +232,4 @@ class Point {
     }
 }
 console.log("Server started.");
-clicks.push(new Click(new Point(100,100)));
+clicks.push(new Click(new Point(100,100),generateSessionID()));
