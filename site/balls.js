@@ -54,23 +54,6 @@ function longPollForClicks() {
             }
             setTimeout(longPollForClicks, 0);
         }).catch(rej => console.log("error: ", rej));
-
-    /*
-    var connectRequest = new XMLHttpRequest();
-    connectRequest.onreadystatechange = () => {
-        if (this.readyState == 4 && this.status == 200){
-            let response = JSON.parse(this.responseText);
-            console.log("response: "+response);
-            if (balls.size <= response.index){
-                dropABall(response.location, response.topTime, response.dropTime);
-            }else{
-                balls[data.index] = new Ball(response.location, response.topTime, response.dropTime);
-            }
-            setTimeout(longPollForClicks(), 0);
-        }
-    };
-    connectRequest.open("GET", "BallPoll?size="+balls.length, true);
-    connectRequest.send();*/
 }
 
 class Ball {
@@ -130,3 +113,14 @@ function drawCircle(x, y, radius) {
     ctx.fill(); //fill the circle
     ctx.closePath(); //stop the drawing
 }
+
+/*
+Todo:
+Fix bug where all balls are synchronous.
+Make each client only have one ball.
+Make a client actually sendClick on click.
+Make the client periodically sync with the server.
+Documentation.
+
+Make each client have a unique color?
+ */

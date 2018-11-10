@@ -30,7 +30,7 @@ let server = http.createServer( (request, response) => {
     if (recieveFileRequest(request, response)) {
         // successfully handled file request.
     }else{
-        recieveNonFileRequest(request, response);
+        receiveNonFileRequest(request, response);
     }
 } ).listen(8080);
 
@@ -47,14 +47,14 @@ function recieveFileRequest(request, response){
         });
     }else if (/(.+)(\.)(.+)/g.test(request.url)) {
         console.log("Generic file requet");
-        let location = "../site" + request.url;
+        let location = "../site" + request.url; // FIXME THIS IS A NAIVE, AND VERY UNSECURE!
         let extension = path.extname(location);
         fs.readFile(location, (error, content) => {
             if (error) {
                 console.log(error);
                 sendEmptyResponse(response);
             } else {
-                response.writeHead(200, {"Content-Type": EXTENSION_MAP[extension]})
+                response.writeHead(200, {"Content-Type": EXTENSION_MAP[extension]});
                 response.end(content, "utf-8");
             }
         });
@@ -64,7 +64,7 @@ function recieveFileRequest(request, response){
     return true;
 }
 
-function recieveNonFileRequest(request, response) {
+function receiveNonFileRequest(request, response) {
     console.log("Non file request:");
     if (request.url.startsWith("/BallPoll")) {
         console.log("Ball poll recieved");
@@ -80,7 +80,6 @@ function recieveNonFileRequest(request, response) {
                 if (index !== -1) {waitingClients.splice(index, 1);}
             });
         }
-        //TODO: Long poll for new balls. Will respond after a new ball is dropped, or 5 seconds passed by.
     }else if (request.url == "/OnClick") {
         let body = "";
         request.on("data", chunk =>{
@@ -93,8 +92,7 @@ function recieveNonFileRequest(request, response) {
             let index = clicks.length;
             clicks.push(new Click(point));
             clickUpdated(index);
-            console.table("Click received. Clicks:"+clicks);
-            console.log(clicks[0]);
+            console.log("Click received");
             response.writeHead(200, {"Content-Type":"text/txt"});
             response.end("ok");
         });
