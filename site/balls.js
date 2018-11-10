@@ -89,6 +89,7 @@ function setup() {
     window.addEventListener("resize", resize);
     window.requestAnimationFrame(draw);
     longPollForClicks();
+    window.addEventListener('mousedown', mouseIsDown, false);
 }
 
 function draw() {
@@ -113,6 +114,19 @@ function drawCircle(x, y, radius) {
     ctx.fill(); //fill the circle
     ctx.closePath(); //stop the drawing
 }
+
+function mouseIsDown(event) {
+    let cx = event.pageX;
+    let cy = event.pageY;
+    // noinspection SpellCheckingInspection
+    var clickXandY = new Point(cx, cy);
+    sendClick(clickXandY);
+
+    console.log("X: " + cx + ", Y: " + cy);
+}
+
+
+
 
 /*
 Todo:
