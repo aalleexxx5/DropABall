@@ -28,31 +28,31 @@ let clicks = [];
 let sessions = new Map();
 let waitingClients = [];
 
-let server = http.createServer( (request, response) => {
+let server = http.createServer((request, response) => {
     console.log("Received request: ");
-    console.log("URL: "+ request.url);
+    console.log("URL: " + request.url);
 
     if (recieveFileRequest(request, response)) {
         // successfully handled file request.
-    }else{
+    } else {
         receiveNonFileRequest(request, response);
     }
-} ).listen(8080);
+}).listen(8080);
 
-function recieveFileRequest(request, response){
+function recieveFileRequest(request, response) {
     if (request.url == "/") {
         console.log("Index request");
-        fs.readFile("../site/index.html", (error, content)=>{
+        fs.readFile("../site/index.html", (error, content) => {
             if (error) {
                 sendEmptyResponse(response);
-            }else{
-                response.writeHead(200,{"Content-Type":"text/html"});
+            } else {
+                response.writeHead(200, {"Content-Type": "text/html"});
                 response.end(content, "utf-8");
             }
         });
-    }else if (/(.+)(\.)(.+)/g.test(request.url)) {
+    } else if (/(.+)(\.)(.+)/g.test(request.url)) {
         console.log("Generic file requet");
-        let location = "../site" + request.url; // FIXME THIS IS A NAIVE, AND VERY UNSECURE!
+        let location = "../site" + request.url; // FIXME THIS IS NAIVE, AND VERY INSECURE!
         let extension = path.extname(location);
         fs.readFile(location, (error, content) => {
             if (error) {
@@ -63,7 +63,7 @@ function recieveFileRequest(request, response){
                 response.end(content, "utf-8");
             }
         });
-    }else{
+    } else {
         return false;
     }
     return true;
@@ -73,34 +73,36 @@ function receiveNonFileRequest(request, response) {
     console.log("Non file request:");
     if (request.url.startsWith("/BallPoll")) {
         let parameters = url.parse(request.url, true).query;
-        if (parameters.id){
+        if (parameters.id) {
             reIssueSession(parameters.id);
         }
-        if (parameters.size< clicks.length){
+        if (parameters.size < clicks.length) {
             sendClick(response, parameters.size);
         } else if (parameters.size == clicks.length) {
             waitingClients.push(response);
             clearExpiredBalls();
-            response.setTimeout(5000, ()=>{
+            response.setTimeout(5000, () => {
                 response.writeHead(204);
                 response.end();
-                let index = waitingClients.findIndex(e => e==response);
-                if (index !== -1) {waitingClients.splice(index, 1);}
+                let index = waitingClients.findIndex(e => e == response);
+                if (index !== -1) {
+                    waitingClients.splice(index, 1);
+                }
             });
-        }else{ // Clicks are missing, some may have been removed.
+        } else { // Clicks are missing, some may have been removed.
             console.log("Array length mismatch.");
             sendEmptyResponse(response, 205);
         }
-    }else if (request.url == "/OnClick") {
+    } else if (request.url == "/OnClick") {
         let body = "";
-        request.on("data", chunk =>{
+        request.on("data", chunk => {
             body += chunk;
         });
-        request.on("end", ()=>{
+        request.on("end", () => {
             console.log(body);
             let data = query.parse(body);
             let session = data.id;
-            if (session===undefined || !isValidSession(session)) {
+            if (session === undefined || !isValidSession(session)) {
                 console.log(isValidSession(session));
                 sendEmptyResponse(response, 403);
                 return;
@@ -111,54 +113,68 @@ function receiveNonFileRequest(request, response) {
             if (countClicksOfSession(session) < MAX_BALLS_PR_SESSION) {
                 index = clicks.length;
                 clicks.push(new Click(point, session));
-            }else{
+            } else {
                 clickToUpdate = findOldestClickFromSession(session);
-                console.log("Updating: ",clickToUpdate);
-                index = clicks.findIndex(e=> e==clickToUpdate);
+                console.log("Updating: ", clickToUpdate);
+                index = clicks.findIndex(e => e == clickToUpdate);
                 clicks[index] = new Click(point, session);
             }
             clickUpdated(index);
             console.log("Click received");
-            response.writeHead(200, {"Content-Type":"text/txt"});
+            response.writeHead(200, {"Content-Type": "text/txt"});
             response.end("ok");
         });
-    }else if (request.url == "/NewSession"){
-        response.writeHead(200,{"Content-Type":"text/json"});
+    } else if (request.url == "/NewSession") {
+        response.writeHead(200, {"Content-Type": "text/json"});
         let sessionID = generateSessionID();
-        console.log("Sent session id: "+sessionID);
+        console.log("Sent session id: " + sessionID);
         response.end(JSON.stringify(sessionID));
-    } else{
+    } else {
         sendEmptyResponse(response);
     }
 }
 
-function clickUpdated(index){ // No way of removing clicks.
+function clickUpdated(index) { // No way of removing clicks.
     waitingClients.forEach(res => sendClick(res, index));
     waitingClients = [];
 }
 
-function sendClick(response, clickIndex){
-    response.writeHead(200, {"Content-Type":"text/json"});
+function sendClick(response, clickIndex) {
+    response.writeHead(200, {"Content-Type": "text/json"});
     var data = {};
     data.location = clicks[clickIndex].location;
     data.index = clickIndex;
-    data.topTime = (Date.now() - (clicks[clickIndex].clickTime)) % (fallDuration*2);
-    if (data.topTime < LOWEST_LATENCY){
-        data.topTime += fallDuration*2;
+    data.color = hashIDToColorCode(clicks[clickIndex].session);
+    data.topTime = (Date.now() - (clicks[clickIndex].clickTime)) % (fallDuration * 2);
+    if (data.topTime < LOWEST_LATENCY) {
+        data.topTime += fallDuration * 2;
     }
     data.dropTime = fallDuration;
     let responseContent = JSON.stringify(data);
-    console.log("Sent click: "+ responseContent);
+    console.log("Sent click: " + responseContent);
     response.end(responseContent);
 }
 
-function countClicksOfSession(session){
+function hashIDToColorCode(session) {
+    // "Borrowed" from StackOverflow.
+    let hash = session.split("").reduce((a, b) => {
+            a = ((a << 5) - a) + b.charCodeAt(0);
+            return a & a
+        }
+        , 0);
+
+    let colorInt = hash & 0x00000FFF;
+    let colorString = colorInt.toString(16);
+    return "#"+("000".substring(0,3-colorString.length)+colorString);
+}
+
+function countClicksOfSession(session) {
     return clicks.filter(it => it.session === session).length
 }
 
-function findOldestClickFromSession(session){
+function findOldestClickFromSession(session) {
     let oldest = undefined;
-    clicks.filter(it => it.session === session).forEach(it=> {
+    clicks.filter(it => it.session === session).forEach(it => {
         if (!oldest || it.clickTime < oldest.clickTime) {
             oldest = it;
         }
@@ -166,7 +182,7 @@ function findOldestClickFromSession(session){
     return oldest;
 }
 
-function clearExpiredBalls(){
+function clearExpiredBalls() {
     for (let i = 0; i < clicks.length; i++) {
         const click = clicks[i];
         if (!isValidSession(click.session)) {
@@ -180,11 +196,11 @@ function clearExpiredBalls(){
 function generateSessionID() {
     let found = false;
     let id = "";
-    while (!found){
+    while (!found) {
         id = generateRandomIDString();
         found = !(sessions.has(id))
     }
-    sessions.set(id,Date.now() + SESSION_EXP_TIME);
+    sessions.set(id, Date.now() + SESSION_EXP_TIME);
     return id;
 }
 
@@ -193,32 +209,32 @@ function isValidSession(session) {
     return sessions.has(session);
 }
 
-function clearExpiredSessions(){
+function clearExpiredSessions() {
     let toDelete = [];
-    sessions.forEach((value,key) => {
+    sessions.forEach((value, key) => {
         if (value < Date.now()) {
             toDelete.push(key)
         }
     });
-    if (toDelete.length > 0) console.log("Removed expired sessions: ",toDelete);
-    toDelete.forEach(it=>sessions.delete(it));
+    if (toDelete.length > 0) console.log("Removed expired sessions: ", toDelete);
+    toDelete.forEach(it => sessions.delete(it));
 }
 
 function reIssueSession(session) {
-    sessions.set(session,Date.now() + SESSION_EXP_TIME);
+    sessions.set(session, Date.now() + SESSION_EXP_TIME);
 }
 
-function generateRandomIDString(){
+function generateRandomIDString() {
     return crypto.randomBytes(ID_LENGTH).toString("hex");
 }
 
-function sendEmptyResponse(response, status = 404){
+function sendEmptyResponse(response, status = 404) {
     response.writeHead(status);
     response.end();
 }
 
-class Click{
-    constructor(location, session){
+class Click {
+    constructor(location, session) {
         this.location = location;
         this.session = session;
         this.clickTime = Date.now();
@@ -231,5 +247,6 @@ class Point {
         this.y = y;
     }
 }
+
 console.log("Server started.");
-clicks.push(new Click(new Point(100,100),generateSessionID()));
+clicks.push(new Click(new Point(100, 100), generateSessionID()));

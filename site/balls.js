@@ -68,7 +68,7 @@ function longPollForClicks() {
                     console.log("Location: " + response.location);
                     console.log("Top time: " + response.topTime);
                     console.log("Drop time: ", response.dropTime);
-                    balls[response.index] = new Ball(response.location, response.topTime + (Date.now() - START_TIME), response.dropTime);
+                    balls[response.index] = new Ball(response.location, response.topTime + (Date.now() - START_TIME), response.dropTime, response.color);
                 });
             }else if (res.status == 205){
                 balls = [];
@@ -78,10 +78,11 @@ function longPollForClicks() {
 }
 
 class Ball {
-    constructor(topPoint, createTime, dropTime) {
+    constructor(topPoint, createTime, dropTime, color = "#09f") {
         this.topPoint = topPoint;
         this.createTime = createTime;
         this.dropTime = dropTime;
+        this.color = color;
     }
 }
 
@@ -115,9 +116,9 @@ function setup() {
 
 function draw() {
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "#0099ff";
     for (const ball of balls) {
         let timeSinceStart = (Date.now() - START_TIME);
+        ctx.fillStyle = ball.color;
 
         if (ball.createTime > timeSinceStart) continue;
 
@@ -152,10 +153,6 @@ function mouseIsDown(event) {
 
 /*
 Todo:
-Alex: Make each client only have one ball.
-Niclas: Make a client actually sendClick on click.
 Mattias: Make the client periodically sync with the server.
-Documentation.
-
-Make each client have a unique color?
+Alex: Documentation.
  */
