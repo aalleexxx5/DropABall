@@ -99,7 +99,7 @@ function draw() {
 
         if (ball.createTime > timeSinceStart) continue;
 
-        let t = ((timeSinceStart % (ball.dropTime * 2)) - ball.dropTime) / ball.dropTime;
+        let t = (((timeSinceStart-ball.createTime) % (ball.dropTime * 2)) - ball.dropTime) / ball.dropTime;
         let location = new Point(ball.topPoint.x, lerp(height, ball.topPoint.y, Math.abs(t)));
 
         drawCircle(location.x, location.y, RADIUS);
@@ -116,10 +116,9 @@ function drawCircle(x, y, radius) {
 
 /*
 Todo:
-Fix bug where all balls are synchronous.
-Make each client only have one ball.
-Make a client actually sendClick on click.
-Make the client periodically sync with the server.
+Alex: Make each client only have one ball.
+Niclas: Make a client actually sendClick on click.
+Mattias: Make the client periodically sync with the server.
 Documentation.
 
 Make each client have a unique color?
