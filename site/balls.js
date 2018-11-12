@@ -1,8 +1,10 @@
 const RADIUS = 20;
+const SYNC_FREQUENCY = 5000;
 let balls = [];
 let ctx, canvas, width, height;
 let START_TIME = Date.now();
 let sessionID;
+let approxLatency = 0;
 
 function lerp(start, end, t) {
     return start * (1 - t) + end * t;
@@ -27,8 +29,36 @@ function dropThisBall(ball) {
     connectRequest.send();
 }*/
 
-function sendSyncRequest(ballNumberToSync, nextBottomHitTime) {
-    //TODO MATTIAS! Se sendClick og longPoll.
+function sendSyncRequest(ballNumberToSync) {
+    if (balls.length < 1) {
+        setTimeout(()=>sendSyncRequest(0),SYNC_FREQUENCY);
+        return;
+    }
+    if (ballNumberToSync > balls.length - 1) {
+        setTimeout(()=>sendSyncRequest(0));
+        return;
+    }
+    const sendTime = Date.now();
+    fetch("Sync?ball="+ballNumberToSync)
+        .then(res => {
+            if (res.status == 200) {
+                approxLatency = (Date.now()-sendTime) / 2;
+                console.log("Latency updated to: ",approxLatency);
+                return res;
+            } else if (res.status == 404|| res.status == 400) {
+                approxLatency = (Date.now()-sendTime) / 2;
+                console.log("Latency updated to: ",approxLatency);
+                throw new Error("No ball");
+            } else {
+                throw new Error("Server did not respond");
+            }
+        })
+        .then(res => res.json())
+        .then(ball =>{
+            console.log("Synced ball ball: ",ball);
+            balls[ballNumberToSync].createTime = (ball.topTime - START_TIME);
+        })
+        .finally(() => setTimeout(() => sendSyncRequest(ballNumberToSync+1), SYNC_FREQUENCY));
 }
 
 function sendSessionRequest(){
@@ -68,7 +98,7 @@ function longPollForClicks() {
                     console.log("Location: " + response.location);
                     console.log("Top time: " + response.topTime);
                     console.log("Drop time: ", response.dropTime);
-                    balls[response.index] = new Ball(response.location, response.topTime + (Date.now() - START_TIME), response.dropTime, response.color);
+                    balls[response.index] = new Ball(response.location, (response.topTime-approxLatency) + (Date.now() - START_TIME), response.dropTime, response.color);
                 });
             }else if (res.status == 205){
                 balls = [];
@@ -112,6 +142,7 @@ function setup() {
     window.requestAnimationFrame(draw);
     longPollForClicks();
     window.addEventListener('mousedown', mouseIsDown, false);
+    sendSyncRequest(0);
 }
 
 function draw() {

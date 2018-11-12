@@ -125,10 +125,27 @@ function receiveNonFileRequest(request, response) {
             response.end("ok");
         });
     } else if (request.url == "/NewSession") {
-        response.writeHead(200, {"Content-Type": "text/json"});
+        response.writeHead(200, {"Content-Type": "text/json", "Cache-Control":"no-store"});
         let sessionID = generateSessionID();
         console.log("Sent session id: " + sessionID);
         response.end(JSON.stringify(sessionID));
+    }else if (request.url.startsWith("/Sync")){
+        let parameters = url.parse(request.url,true).query;
+        if (parameters.ball == undefined || parameters.ball == "undefined") {
+            sendEmptyResponse(response, 400);
+            return;
+        }
+        if (parameters.ball >= clicks.length) {
+            sendEmptyResponse(response, 404);
+            return;
+        }else{
+            response.writeHead(200, {"Content-Type": "text/json", "Cache-Control":"no-store"});
+            var data = {};
+            data.topTime = clicks[parameters.ball].clickTime;
+            response.end(JSON.stringify(data));
+        }
+
+
     } else {
         sendEmptyResponse(response);
     }
@@ -140,7 +157,7 @@ function clickUpdated(index) { // No way of removing clicks.
 }
 
 function sendClick(response, clickIndex) {
-    response.writeHead(200, {"Content-Type": "text/json"});
+    response.writeHead(200, {"Content-Type": "text/json", "Cache-Control":"no-store"});
     var data = {};
     data.location = clicks[clickIndex].location;
     data.index = clickIndex;
@@ -229,7 +246,7 @@ function generateRandomIDString() {
 }
 
 function sendEmptyResponse(response, status = 404) {
-    response.writeHead(status);
+    response.writeHead(status, {"Content-Type": "text/plain", "Cache-Control":"no-store"});
     response.end();
 }
 
