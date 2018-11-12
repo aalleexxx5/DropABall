@@ -6,90 +6,64 @@ let START_TIME = Date.now();
 let sessionID;
 let approxLatency = 0;
 
-function lerp(start, end, t) {
-    return start * (1 - t) + end * t;
+
+/* ===================================================================================
+                                   APPLICATION FUNCTIONS
+   ===================================================================================
+*/
+
+function setup() {
+    canvas = document.getElementById("canvas");
+    ctx = canvas.getContext("2d");
+    resize();
+    window.addEventListener("resize", resize);
+    window.requestAnimationFrame(draw);
+    longPollForClicks();
+    window.addEventListener('mousedown', mouseIsDown, false);
+    sendSyncRequest(0);
 }
 
-function dropABall(startPoint, startTime, dropTime) {
-    balls.push(new Ball(startPoint, startTime + (Date.now() - START_TIME), dropTime))
+function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
 }
 
-function dropThisBall(ball) {
-    balls.push(ball);
-}
+function draw() {
+    ctx.clearRect(0, 0, width, height);
+    for (const ball of balls) {
+        let timeSinceStart = (Date.now() - START_TIME);
+        ctx.fillStyle = ball.color;
 
-/*function sendConnectRequest(){
-    var connectRequest = new XMLHttpRequest();
-    connectRequest.onreadystatechange = () => {
-        if (this.readyState == 4 && this.status == 200){
-            balls = JSON.parse(this.responseText);
-        }
-    };
-    connectRequest.open("GET", "balls", true);
-    connectRequest.send();
-}*/
+        if (ball.createTime > timeSinceStart) continue;
 
-function sendSyncRequest(ballNumberToSync) {
-    if (balls.length < 1) {
-        setTimeout(()=>sendSyncRequest(0),SYNC_FREQUENCY);
-        return;
+        let t = Math.abs((((timeSinceStart - ball.createTime) % (ball.dropTime * 2)) - ball.dropTime) / ball.dropTime);
+        let adjustedT = t * (2 - t);
+        let location = new Point(ball.topPoint.x, lerp(height, ball.topPoint.y, adjustedT));
+
+        drawCircle(location.x, location.y, RADIUS);
     }
-    if (ballNumberToSync > balls.length - 1) {
-        setTimeout(()=>sendSyncRequest(0));
-        return;
-    }
-    const sendTime = Date.now();
-    fetch("Sync?ball="+ballNumberToSync)
-        .then(res => {
-            if (res.status == 200) {
-                approxLatency = (Date.now()-sendTime) / 2;
-                console.log("Latency updated to: ",approxLatency);
-                return res;
-            } else if (res.status == 404|| res.status == 400) {
-                approxLatency = (Date.now()-sendTime) / 2;
-                console.log("Latency updated to: ",approxLatency);
-                throw new Error("No ball");
-            } else {
-                throw new Error("Server did not respond");
-            }
-        })
-        .then(res => res.json())
-        .then(ball =>{
-            console.log("Synced ball: ",ball);
-            balls[ballNumberToSync].createTime = (ball.topTime-approxLatency)+(Date.now()-START_TIME);
-        })
-        .finally(() => setTimeout(() => sendSyncRequest(ballNumberToSync+1), SYNC_FREQUENCY));
+    window.requestAnimationFrame(draw);
 }
 
-function sendSessionRequest(){
-    return fetch("NewSession")
-        .then(res => res.json())
-        .then(id => {
-            console.log("Recieved sessionID: ",id);
-            sessionID = id
-        });
+function mouseIsDown(event) {
+    let cx = event.pageX;
+    let cy = event.pageY;
+    // noinspection SpellCheckingInspection
+    var clickXandY = new Point(cx, cy);
+    sendClick(clickXandY);
+
+    console.log("X: " + cx + ", Y: " + cy);
 }
 
-function sendClick(clickLocation) {
-    if (!sessionID) {
-        sendSessionRequest();
-        return;
-    }
-    var connectRequest = new XMLHttpRequest();
-    connectRequest.open("POST", "OnClick", true);
-    connectRequest.onreadystatechange = function(){
-        if (this.status === 403) {
-            sendSessionRequest();
-            return;
-        }
-    };
-    let jsonLocation = JSON.stringify(clickLocation);
-    console.log(jsonLocation);
-    connectRequest.send("location=" + jsonLocation+"&id="+sessionID+"&latency="+approxLatency);
-}
+/* ===================================================================================
+                                      NETWORKING
+   ===================================================================================
+*/
 
 function longPollForClicks() {
-    fetch("BallPoll?size=" + balls.length + (sessionID? "&id="+sessionID:""))
+    fetch("BallPoll?size=" + balls.length + (sessionID ? "&id=" + sessionID : ""))
         .then(res => {
             if (res.status == 200) {
                 res.json().then(response => {
@@ -100,12 +74,76 @@ function longPollForClicks() {
                     console.log("Drop time: ", response.dropTime);
                     balls[response.index] = new Ball(response.location, (response.topTime - approxLatency) + (Date.now() - START_TIME), response.dropTime, response.color);
                 });
-            }else if (res.status == 205){
+            } else if (res.status == 205) {
                 balls = [];
             }
             setTimeout(longPollForClicks, 0);
         }).catch(rej => console.log("error: ", rej));
 }
+
+function sendClick(clickLocation) {
+    if (!sessionID) {
+        sendSessionRequest();
+        return;
+    }
+    var connectRequest = new XMLHttpRequest();
+    connectRequest.open("POST", "OnClick", true);
+    connectRequest.onreadystatechange = function () {
+        if (this.status === 403) {
+            sendSessionRequest();
+            return;
+        }
+    };
+    let jsonLocation = JSON.stringify(clickLocation);
+    console.log(jsonLocation);
+    connectRequest.send("location=" + jsonLocation + "&id=" + sessionID + "&latency=" + approxLatency);
+}
+
+function sendSessionRequest() {
+    return fetch("NewSession")
+        .then(res => res.json())
+        .then(id => {
+            console.log("Recieved sessionID: ", id);
+            sessionID = id
+        });
+}
+
+function sendSyncRequest(ballNumberToSync) {
+    if (balls.length < 1) {
+        setTimeout(() => sendSyncRequest(0), SYNC_FREQUENCY);
+        return;
+    }
+    if (ballNumberToSync > balls.length - 1) {
+        setTimeout(() => sendSyncRequest(0));
+        return;
+    }
+    const sendTime = Date.now();
+    fetch("Sync?ball=" + ballNumberToSync)
+        .then(res => {
+            if (res.status == 200) {
+                approxLatency = (Date.now() - sendTime) / 2;
+                console.log("Latency updated to: ", approxLatency);
+                return res;
+            } else if (res.status == 404 || res.status == 400) {
+                approxLatency = (Date.now() - sendTime) / 2;
+                console.log("Latency updated to: ", approxLatency);
+                throw new Error("No ball");
+            } else {
+                throw new Error("Server did not respond");
+            }
+        })
+        .then(res => res.json())
+        .then(ball => {
+            console.log("Synced ball: ", ball);
+            balls[ballNumberToSync].createTime = (ball.topTime - approxLatency) + (Date.now() - START_TIME);
+        })
+        .finally(() => setTimeout(() => sendSyncRequest(ballNumberToSync + 1), SYNC_FREQUENCY));
+}
+
+/* ===================================================================================
+                                    CLASSES
+   ===================================================================================
+*/
 
 class Ball {
     constructor(topPoint, createTime, dropTime, color = "#09f") {
@@ -123,43 +161,13 @@ class Point {
     }
 }
 
-function resize() {
-    width = window.innerWidth;
-    height = window.innerHeight;
-    canvas.width = width;
-    canvas.height = height;
-}
+/* ===================================================================================
+                                     UTILITY FUNCTIONS
+   ===================================================================================
+*/
 
-function pointToBottom(point) {
-    return new Point(point.x, height);
-}
-
-function setup() {
-    canvas = document.getElementById("canvas");
-    ctx = canvas.getContext("2d");
-    resize();
-    window.addEventListener("resize", resize);
-    window.requestAnimationFrame(draw);
-    longPollForClicks();
-    window.addEventListener('mousedown', mouseIsDown, false);
-    sendSyncRequest(0);
-}
-
-function draw() {
-    ctx.clearRect(0, 0, width, height);
-    for (const ball of balls) {
-        let timeSinceStart = (Date.now() - START_TIME);
-        ctx.fillStyle = ball.color;
-
-        if (ball.createTime > timeSinceStart) continue;
-
-        let t = Math.abs((((timeSinceStart-ball.createTime) % (ball.dropTime * 2)) - ball.dropTime) / ball.dropTime);
-        let adjustedT = t*(2-t);
-        let location = new Point(ball.topPoint.x, lerp(height, ball.topPoint.y, adjustedT));
-
-        drawCircle(location.x, location.y, RADIUS);
-    }
-    window.requestAnimationFrame(draw);
+function lerp(start, end, t) {
+    return start * (1 - t) + end * t;
 }
 
 function drawCircle(x, y, radius) {
@@ -169,21 +177,16 @@ function drawCircle(x, y, radius) {
     ctx.closePath(); //stop the drawing
 }
 
-function mouseIsDown(event) {
-    let cx = event.pageX;
-    let cy = event.pageY;
-    // noinspection SpellCheckingInspection
-    var clickXandY = new Point(cx, cy);
-    sendClick(clickXandY);
+/* ===================================================================================
+                                      DEBUG FUNCTIONS
+   ===================================================================================
+*/
 
-    console.log("X: " + cx + ", Y: " + cy);
+// DEBUG functions.
+function dropABall(startPoint, startTime, dropTime) {
+    balls.push(new Ball(startPoint, startTime + (Date.now() - START_TIME), dropTime))
 }
 
-
-
-
-/*
-Todo:
-Mattias: Make the client periodically sync with the server.
-Alex: Documentation.
- */
+function dropThisBall(ball) {
+    balls.push(ball);
+}

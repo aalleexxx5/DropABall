@@ -32,14 +32,14 @@ let server = http.createServer((request, response) => {
     console.log("Received request: ");
     console.log("URL: " + request.url);
 
-    if (recieveFileRequest(request, response)) {
+    if (tryHandleFileRequest(request, response)) {
         // successfully handled file request.
     } else {
         receiveNonFileRequest(request, response);
     }
 }).listen(8080);
 
-function recieveFileRequest(request, response) {
+function tryHandleFileRequest(request, response) {
     if (request.url == "/") {
         console.log("Index request");
         fs.readFile("../site/index.html", (error, content) => {
@@ -72,6 +72,23 @@ function recieveFileRequest(request, response) {
 function receiveNonFileRequest(request, response) {
     console.log("Non file request:");
     if (request.url.startsWith("/BallPoll")) {
+        HandleBallPoll();
+    } else if (request.url == "/OnClick") {
+        HandleOnClick();
+    } else if (request.url == "/NewSession") {
+        handleNewSession();
+    } else if (request.url.startsWith("/Sync")) {
+        handleSync();
+    } else {
+        sendEmptyResponse(response);
+    }
+
+    /* ===================================================================================
+                                   REQUEST HANDLERS
+       ===================================================================================
+    */
+
+    function HandleBallPoll() {
         let parameters = url.parse(request.url, true).query;
         if (parameters.id) {
             reIssueSession(parameters.id);
@@ -93,7 +110,9 @@ function receiveNonFileRequest(request, response) {
             console.log("Array length mismatch.");
             sendEmptyResponse(response, 205);
         }
-    } else if (request.url == "/OnClick") {
+    }
+
+    function HandleOnClick() {
         let body = "";
         request.on("data", chunk => {
             body += chunk;
@@ -125,40 +144,61 @@ function receiveNonFileRequest(request, response) {
             response.writeHead(200, {"Content-Type": "text/txt"});
             response.end("ok");
         });
-    } else if (request.url == "/NewSession") {
-        response.writeHead(200, {"Content-Type": "text/json", "Cache-Control":"no-store"});
+    }
+
+    function handleNewSession() {
+        response.writeHead(200, {"Content-Type": "text/json", "Cache-Control": "no-store"});
         let sessionID = generateSessionID();
         console.log("Sent session id: " + sessionID);
         response.end(JSON.stringify(sessionID));
-    }else if (request.url.startsWith("/Sync")){
-        let parameters = url.parse(request.url,true).query;
+    }
+
+    function handleSync() {
+        let parameters = url.parse(request.url, true).query;
         if (parameters.ball == undefined || parameters.ball == "undefined") {
             sendEmptyResponse(response, 400);
-            return;
         }
-        if (parameters.ball >= clicks.length) {
+        else if (parameters.ball >= clicks.length) {
             sendEmptyResponse(response, 404);
-            return;
-        }else{
-            response.writeHead(200, {"Content-Type": "text/json", "Cache-Control":"no-store"});
+        } else {
+            response.writeHead(200, {"Content-Type": "text/json", "Cache-Control": "no-store"});
             var data = {};
             data.topTime = calculateNextTopTime(clicks[parameters.ball]);
             response.end(JSON.stringify(data));
         }
-
-
-    } else {
-        sendEmptyResponse(response);
     }
 }
+
+/* ===================================================================================
+                                   UTILITY FUNCTIONS
+   ===================================================================================
+*/
+
+function sendEmptyResponse(response, status = 404) {
+    response.writeHead(status, {"Content-Type": "text/plain", "Cache-Control": "no-store"});
+    response.end();
+}
+
 
 function clickUpdated(index) { // No way of removing clicks.
     waitingClients.forEach(res => sendClick(res, index));
     waitingClients = [];
 }
 
-// Only relative times are sent, because of potential desyncs.
-function calculateNextTopTime(click){
+function sendClick(response, clickIndex) {
+    response.writeHead(200, {"Content-Type": "text/json", "Cache-Control": "no-store"});
+    var data = {};
+    data.location = clicks[clickIndex].location;
+    data.index = clickIndex;
+    data.color = hashSessionToColorCode(clicks[clickIndex].session);
+    data.topTime = calculateNextTopTime(clicks[clickIndex]);
+    data.dropTime = fallDuration;
+    let responseContent = JSON.stringify(data);
+    console.log("Sent click: " + responseContent);
+    response.end(responseContent);
+}
+
+function calculateNextTopTime(click) {// Only relative times are sent, because of potential desyncs.
     let lastTop = (Date.now() - (click.clickTime)) % (fallDuration * 2);
     let nextTop = fallDuration * 2 - lastTop;
     if (nextTop < LOWEST_LATENCY) {
@@ -167,56 +207,10 @@ function calculateNextTopTime(click){
     return nextTop;
 }
 
-function sendClick(response, clickIndex) {
-    response.writeHead(200, {"Content-Type": "text/json", "Cache-Control":"no-store"});
-    var data = {};
-    data.location = clicks[clickIndex].location;
-    data.index = clickIndex;
-    data.color = hashIDToColorCode(clicks[clickIndex].session);
-    data.topTime = calculateNextTopTime(clicks[clickIndex]);
-    data.dropTime = fallDuration;
-    let responseContent = JSON.stringify(data);
-    console.log("Sent click: " + responseContent);
-    response.end(responseContent);
-}
-
-function hashIDToColorCode(session) {
-    // "Borrowed" from StackOverflow.
-    let hash = session.split("").reduce((a, b) => {
-            a = ((a << 5) - a) + b.charCodeAt(0);
-            return a & a
-        }
-        , 0);
-
-    let colorInt = hash & 0x00000FFF;
-    let colorString = colorInt.toString(16);
-    return "#"+("000".substring(0,3-colorString.length)+colorString);
-}
-
-function countClicksOfSession(session) {
-    return clicks.filter(it => it.session === session).length
-}
-
-function findOldestClickFromSession(session) {
-    let oldest = undefined;
-    clicks.filter(it => it.session === session).forEach(it => {
-        if (!oldest || it.clickTime < oldest.clickTime) {
-            oldest = it;
-        }
-    });
-    return oldest;
-}
-
-function clearExpiredBalls() {
-    for (let i = 0; i < clicks.length; i++) {
-        const click = clicks[i];
-        if (!isValidSession(click.session)) {
-            console.log("Cleared expired ball");
-            clicks.splice(i, 1);
-            i--;
-        }
-    }
-}
+/* ===================================================================================
+                                   SESSION FUNCTIONS
+   ===================================================================================
+*/
 
 function generateSessionID() {
     let found = false;
@@ -227,6 +221,10 @@ function generateSessionID() {
     }
     sessions.set(id, Date.now() + SESSION_EXP_TIME);
     return id;
+}
+
+function generateRandomIDString() {
+    return crypto.randomBytes(ID_LENGTH).toString("hex");
 }
 
 function isValidSession(session) {
@@ -249,20 +247,54 @@ function reIssueSession(session) {
     sessions.set(session, Date.now() + SESSION_EXP_TIME);
 }
 
-function generateRandomIDString() {
-    return crypto.randomBytes(ID_LENGTH).toString("hex");
+function countClicksOfSession(session) {
+    return clicks.filter(it => it.session === session).length
 }
 
-function sendEmptyResponse(response, status = 404) {
-    response.writeHead(status, {"Content-Type": "text/plain", "Cache-Control":"no-store"});
-    response.end();
+function findOldestClickFromSession(session) {
+    let oldest = undefined;
+    clicks.filter(it => it.session === session).forEach(it => {
+        if (!oldest || it.clickTime < oldest.clickTime) {
+            oldest = it;
+        }
+    });
+    return oldest;
 }
+
+function hashSessionToColorCode(session) {
+    // "Borrowed" from StackOverflow.
+    let hash = session.split("").reduce((a, b) => {
+            a = ((a << 5) - a) + b.charCodeAt(0);
+            return a & a
+        }
+        , 0);
+
+    let colorInt = hash & 0x00000FFF;
+    let colorString = colorInt.toString(16);
+    return "#" + ("000".substring(0, 3 - colorString.length) + colorString);
+}
+
+function clearExpiredBalls() {
+    for (let i = 0; i < clicks.length; i++) {
+        const click = clicks[i];
+        if (!isValidSession(click.session)) {
+            console.log("Cleared expired ball");
+            clicks.splice(i, 1);
+            i--;
+        }
+    }
+}
+
+/* ===================================================================================
+                                   CLASS DEFINITIONS
+   ===================================================================================
+*/
 
 class Click {
     constructor(location, session, latency = 0) {
         this.location = location;
         this.session = session;
-        this.clickTime = Date.now()-latency;
+        this.clickTime = Date.now() - latency;
     }
 }
 
