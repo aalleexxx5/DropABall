@@ -55,8 +55,8 @@ function sendSyncRequest(ballNumberToSync) {
         })
         .then(res => res.json())
         .then(ball =>{
-            console.log("Synced ball ball: ",ball);
-            balls[ballNumberToSync].createTime = (ball.topTime - START_TIME);
+            console.log("Synced ball: ",ball);
+            balls[ballNumberToSync].createTime = (ball.topTime-approxLatency)+(Date.now()-START_TIME);
         })
         .finally(() => setTimeout(() => sendSyncRequest(ballNumberToSync+1), SYNC_FREQUENCY));
 }
@@ -85,7 +85,7 @@ function sendClick(clickLocation) {
     };
     let jsonLocation = JSON.stringify(clickLocation);
     console.log(jsonLocation);
-    connectRequest.send("location=" + jsonLocation+"&id="+sessionID);
+    connectRequest.send("location=" + jsonLocation+"&id="+sessionID+"&latency="+approxLatency);
 }
 
 function longPollForClicks() {
@@ -98,7 +98,7 @@ function longPollForClicks() {
                     console.log("Location: " + response.location);
                     console.log("Top time: " + response.topTime);
                     console.log("Drop time: ", response.dropTime);
-                    balls[response.index] = new Ball(response.location, (response.topTime-approxLatency) + (Date.now() - START_TIME), response.dropTime, response.color);
+                    balls[response.index] = new Ball(response.location, (response.topTime - approxLatency) + (Date.now() - START_TIME), response.dropTime, response.color);
                 });
             }else if (res.status == 205){
                 balls = [];

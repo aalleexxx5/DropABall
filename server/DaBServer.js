@@ -4,8 +4,8 @@ const fs = require("fs");
 const path = require("path");
 const query = require('querystring');
 const crypto = require("crypto");
-const fallDuration = 500;
-const LOWEST_LATENCY = 100;
+const fallDuration = 700;
+const LOWEST_LATENCY = 400;
 const ID_LENGTH = 32;
 const MAX_BALLS_PR_SESSION = 2;
 const SESSION_EXP_TIME = 10000; // 10_000
@@ -109,15 +109,16 @@ function receiveNonFileRequest(request, response) {
             }
 
             let point = JSON.parse(data.location);
+            let latency = data.latency;
             let index;
             if (countClicksOfSession(session) < MAX_BALLS_PR_SESSION) {
                 index = clicks.length;
-                clicks.push(new Click(point, session));
+                clicks.push(new Click(point, session, latency));
             } else {
                 clickToUpdate = findOldestClickFromSession(session);
                 console.log("Updating: ", clickToUpdate);
                 index = clicks.findIndex(e => e == clickToUpdate);
-                clicks[index] = new Click(point, session);
+                clicks[index] = new Click(point, session, latency);
             }
             clickUpdated(index);
             console.log("Click received");
@@ -141,7 +142,7 @@ function receiveNonFileRequest(request, response) {
         }else{
             response.writeHead(200, {"Content-Type": "text/json", "Cache-Control":"no-store"});
             var data = {};
-            data.topTime = clicks[parameters.ball].clickTime;
+            data.topTime = calculateNextTopTime(clicks[parameters.ball]);
             response.end(JSON.stringify(data));
         }
 
@@ -156,16 +157,23 @@ function clickUpdated(index) { // No way of removing clicks.
     waitingClients = [];
 }
 
+// Only relative times are sent, because of potential desyncs.
+function calculateNextTopTime(click){
+    let lastTop = (Date.now() - (click.clickTime)) % (fallDuration * 2);
+    let nextTop = fallDuration * 2 - lastTop;
+    if (nextTop < LOWEST_LATENCY) {
+        nextTop += fallDuration * 2;
+    }
+    return nextTop;
+}
+
 function sendClick(response, clickIndex) {
     response.writeHead(200, {"Content-Type": "text/json", "Cache-Control":"no-store"});
     var data = {};
     data.location = clicks[clickIndex].location;
     data.index = clickIndex;
     data.color = hashIDToColorCode(clicks[clickIndex].session);
-    data.topTime = (Date.now() - (clicks[clickIndex].clickTime)) % (fallDuration * 2);
-    if (data.topTime < LOWEST_LATENCY) {
-        data.topTime += fallDuration * 2;
-    }
+    data.topTime = calculateNextTopTime(clicks[clickIndex]);
     data.dropTime = fallDuration;
     let responseContent = JSON.stringify(data);
     console.log("Sent click: " + responseContent);
@@ -251,10 +259,10 @@ function sendEmptyResponse(response, status = 404) {
 }
 
 class Click {
-    constructor(location, session) {
+    constructor(location, session, latency = 0) {
         this.location = location;
         this.session = session;
-        this.clickTime = Date.now();
+        this.clickTime = Date.now()-latency;
     }
 }
 
